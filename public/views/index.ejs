@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Street Fighter</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css" integrity="sha512-NhSC1YmyruXifcj/KFRWoC561YpHpc5Jtzgvbuzx5VozKpWvQ+4nXhPdFgmx8xqexRcpAglTj9sIBWINXa8x5w==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+        <link rel="stylesheet" href="stylesheets/index.css" />
+        <script type="text/javascript" src="/socket.io/socket.io.js"></script>
+        <script type="text/javascript" src="scripts/FightingGround.js" defer></script>
+        <script type="text/javascript" src="scripts/Character.js" defer></script>
+        <script type="text/javascript">
+            $(document).ready(() => {
+                const socket = io();
+                let id;
+                let role;
+                let gameOver = true;
+
+                socket.on("status", (data) => {
+                    console.log(data.msg);
+                    id = data.id;
+                    socket.emit("confirmation", { msg: "Connection confirmation -" });
+                });
+
+                socket.on("initialRole", (data) => {
+                    role = data.role;
+                    newRole();
+                });
+
+                socket.on("userLeft", (data) => {
+                    console.log(data.msg);
+                    for (let i = 0; i < data.users.length; i++) {
+                        if (id === data.users[i].id) {
+                            role = data.users[i].role;
+                            break;
+                        }
+                    }
+                    newRole();
+                });
+
+                function newRole() {
+                    $("#ready").remove();
+                    if (role != "Spectator") {
+                        $(".instructions").append('<button id="ready">Ready</button>');
+                    }
+                    $("#socket_id").text(`Socket ID: ${id} (${role})`);
+                }
+
+                socket.on("startGame", () => {
+                    startGame();
+                });
+
+                $(document).on("click", "#ready", () => {
+                    $("#ready").addClass("active");
+                    //startgame
+                    socket.emit("ready");
+                });
+
+                function startGame() {
+                    $("audio")[0].play();
+                    gameOver = false;
+                    let a = new FightingGround("ch1", "ryu", "ch2", "sagat");
+                    let gameLoop = setInterval(() => {
+                        a.mainLoop();
+                    }, 100);
+                    let sendPos;
+                    if (role != "Spectator") {
+                        sendPos = (sendPostion, 100);
+                    }
+
+                    $(document).keydown(function (e) {
+                        if (e.keyCode == 39) {
+                            socket.emit("sendMove", { action: "FORWARD", role: role });
+                        } else if (e.keyCode == 38) {
+                            socket.emit("sendMove", { action: "JUMP", role: role });
+                        } else if (e.keyCode == 37) {
+                            socket.emit("sendMove", { action: "BACKWARD", role: role });
+                        } else if (e.keyCode == 16) {
+                            socket.emit("sendMove", { action: "CROUCH", role: role });
+                        } else if (e.keyCode == 81 && e.shiftKey == false) {
+                            socket.emit("sendMove", { action: "LIGHTPUNCH", role: role });
+                        } else if (e.keyCode == 87 && e.shiftKey == false) {
+                            socket.emit("sendMove", { action: "LIGHTKICK", role: role });
+                        } else if (e.keyCode == 65 && e.shiftKey == false) {
+                            socket.emit("sendMove", { action: "HEAVYPUNCH", role: role });
+                        } else if (e.keyCode == 83 && e.shiftKey == false) {
+                            socket.emit("sendMove", { action: "HEAVYKICK", role: role });
+                        } else if (e.keyCode == 81 && e.shiftKey == true) {
+                            socket.emit("sendMove", { action: "CROUCHLIGHTPUNCH", role: role });
+                        } else if (e.keyCode == 87 && e.shiftKey == true) {
+                            socket.emit("sendMove", { action: "CROUCHLIGHTKICK", role: role });
+                        } else if (e.keyCode == 65 && e.shiftKey == true) {
+                            socket.emit("sendMove", { action: "CROUCHHEAVYPUNCH", role: role });
+                        } else if (e.keyCode == 83 && e.shiftKey == true) {
+                            socket.emit("sendMove", { action: "CROUCHHEAVYKICK", role: role });
+                        } else if (e.keyCode == 68 && e.shiftKey == false) {
+                            socket.emit("sendMove", { action: "BLOCK", role: role });
+                        } else if (e.keyCode == 68 && e.shiftKey == true) {
+                            socket.emit("sendMove", { action: "CROUCHBLOCK", role: role });
+                        }
+                    });
+
+                    socket.on("updateAction", (data) => {
+                        a["character" + data.playerNum].updateAction(data.action);
+
+                        let punchArray = ["LIGHTPUNCH", "CROUCHLIGHTPUNCH", "HEAVYPUNCH", "CROUCHHEAVYPUNCH"];
+                        let kickArray = ["LIGHTKICK", "CROUCHLIGHTKICK", "HEAVYKICK", "CROUCHHEAVYKICK"];
+                        let distance;
+                        let receiver;
+
+                        data.playerNum == 1 ? (receiver = 2) : (receiver = 1);
+
+                        if (a.character1.x <= 0 && a.character2.x >= 0) {
+                            distance = 75 + a.character2.x - a.character1.x;
+                        } else if (a.character1.x < 0 && a.character2.x < 0) {
+                            distance = Math.abs(a.character1.x - 75 - a.character2.x);
+                        } else if (a.character1.x > -1 && a.character2.x > -1) {
+                            distance = a.character2.x + 75 - a.character1.x;
+                        }
+
+                        if (punchArray.includes(data.action) && distance <= 30) {
+                            let index = punchArray.indexOf(data.action);
+
+                            if (index < 2) {
+                                data.playerNum == 1 ? (a.character2.health -= 5) : (a.character1.health -= 5);
+                            } else {
+                                data.playerNum == 1 ? (a.character2.health -= 10) : (a.character1.health -= 10);
+                                socket.emit("sendMove", { action: "HIT", role: `Player ${receiver}` });
+                            }
+                            $(`#player${receiver}_details .healthbar .health`).css("width", a["character" + receiver].health + "%");
+                        } else if (kickArray.includes(data.action) && distance <= 50) {
+                            let index = kickArray.indexOf(data.action);
+
+                            if (index < 2) {
+                                data.playerNum == 1 ? (a.character2.health -= 10) : (a.character1.health -= 10);
+                            } else {
+                                data.playerNum == 1 ? (a.character2.health -= 20) : (a.character1.health -= 20);
+                                socket.emit("sendMove", { action: "HIT", role: `Player ${receiver}` });
+                            }
+                            $(`#player${receiver}_details .healthbar .health`).css("width", a["character" + receiver].health + "%");
+                        }
+
+                        if (a[`character${receiver}`].health <= 0 && !gameOver) {
+                            socket.emit("gameOver", { winner: data.playerNum, loser: receiver });
+                        }
+                    });
+
+                    socket.on("endGame", (data) => {
+                        gameOver = true;
+                        console.log(data.winner);
+                        socket.emit("sendMove", { action: "KO", role: data.loserRole });
+                        socket.emit("sendMove", { action: "VICTORY", role: data.winnerRole });
+
+                        setTimeout(() => {
+                            clearInterval(gameLoop);
+                            clearInterval(sendPos);
+                        }, 500);
+                        newRole();
+                    });
+
+                    socket.on("currentPosition", (data) => {
+                        a.character1.x = data.charactersPosition.ch1[0].substring(0, data.charactersPosition.ch1[1].length - 1);
+                        a.character1.y = data.charactersPosition.ch1[1].substring(0, data.charactersPosition.ch1[1].length - 1);
+                        a.character2.x = data.charactersPosition.ch2[0].substring(0, data.charactersPosition.ch1[1].length - 1);
+                        a.character2.y = data.charactersPosition.ch2[1].substring(0, data.charactersPosition.ch1[1].length - 1);
+
+                        console.log("position from server");
+                    });
+
+                    function sendPostion() {
+                        socket.emit("sendPosition", {
+                            ch1: [$("#ch1").css("left"), $("#ch1").css("top")],
+                            ch2: [$("#ch2").css("left"), $("#ch2").css("top")],
+                        });
+                    }
+                }
+            });
+        </script>
+    </head>
+    <body>
+        <p id="socket_id"></p>
+        <img class="logo" src="images/logo.png" alt="Street Fighter" />
+        <div class="game">
+            <section>
+                <div id="player1_details" class="player_details">
+                    <h2>RYU</h2>
+                    <div class="healthbar">
+                        <div class="health"></div>
+                    </div>
+                </div>
+                <div id="player2_details" class="player_details">
+                    <h2>SAGAT</h2>
+                    <div class="healthbar">
+                        <div class="health"></div>
+                    </div>
+                </div>
+            </section>
+            <div id="ch1" class="character"></div>
+            <div id="ch2" class="character"></div>
+        </div>
+        <div class="instructions">
+            <h2>CONTROLS</h2>
+            <p>Arrow Keys: Move</p>
+            <p>Shift: Crouch</p>
+            <p>Q: Light Punch</p>
+            <p>A: Heavy Punch</p>
+            <p>W: Light Kick</p>
+            <p>S: Heavy Kick</p>
+            <p>D: Block</p>
+        </div>
+        <audio src="audio/cps2-guile-stage.mp3"></audio>
+    </body>
+</html>
